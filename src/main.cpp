@@ -1,60 +1,55 @@
 #include <Arduino.h>
+#include <arduinoFFT.h>
+
+// valores definidos
+#define SAMPLES 64             //Must be a power of 2
+#define SAMPLING_FREQUENCY 200 //Hz, must be less than 10000 due to ADC
 
 // pinos utilizados
 #define A0 2
 #define D0 4
 // variáveis globais
-float freq = 0;
+arduinoFFT FFT = arduinoFFT();
+unsigned int sampling_period_us;
+unsigned long microseconds;
+double freq = 0;
 int let_PA = 0, let_PD = 0;
-int cnt_zr = 0, cnt_pc = 0;
-long int tempoI = 0, tempoF = 0, tempoR = 0;
+double vals[SAMPLES], img[SAMPLES];
+
+
 // declaração de funções
-float calc_freq();
+double calc_freq();
 
 
 void setup() {
   //Configura portas do SW18010P
   pinMode(A0, INPUT);
   pinMode(D0, INPUT);
+  sampling_period_us = round(1000000*(1.0/SAMPLING_FREQUENCY));
   Serial.begin(9600); 
 }
 
 void loop() {
   //Leitura dos valores e apresentação na serial
+  // popula um vetor por um periodo de 200ms
+
+  for (int x = 0 ; x < SAMPLES ; x++){
+    microseconds = micros();    //Overflows after around 70 minutes!
+    vals[x] = analogRead(A0);
+    img[x] = 0;
+    while(micros() < (microseconds + sampling_period_us)){}
+  }
   freq = calc_freq();
-  delay(5);
-  Serial.print("\nFrequencia: ");
+  Serial.print("Freq: ");
   Serial.println(freq);
+  delay(100);
 }
 
-float calc_freq() {
-  //Calcula a frequencia do sinal
-  float fr = 0, med = 0;
-  tempoI = millis();
-  while(tempoR < 250){ //verifica média de picos em 1s
-    tempoR = millis() - tempoI;
-    let_PA = digitalRead(A0);
-    Serial.println("Let_PA: "+let_PA);
-    if(let_PA > 800){
-      cnt_pc++;
-    } else{
-      cnt_zr++;
-    }
-  }
-  //Testes Serial
-  Serial.print("\nContagem de picos: ");
-  Serial.print(cnt_pc);
-  Serial.print("\nContagem de zeros: ");
-  Serial.println(cnt_zr);
-  //Calcula a frequencia
-  if(cnt_pc > cnt_zr && cnt_pc > 0 && cnt_zr > 0){
-    med = 1000/cnt_zr;
-    fr = 1/(med/1000);
-  } else if(cnt_pc < cnt_zr && cnt_pc > 0 && cnt_zr > 0){
-    med = 1000/cnt_pc;
-    fr = 1/(med/1000);
-  } else{
-    fr = 0;
-  }
+double calc_freq() {
+  double fr = 0;
+  FFT.Windowing(vals, SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+  FFT.Compute(vals, img, SAMPLES, FFT_FORWARD);
+  FFT.ComplexToMagnitude(vals, img, SAMPLES);
+  fr = FFT.MajorPeak(vals, SAMPLES, SAMPLING_FREQUENCY);
   return fr;
 }
